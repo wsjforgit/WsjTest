@@ -23,12 +23,18 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Expand source
+      - name: Inspect and extract source
         shell: pwsh
         run: |
+          $zip = 'delta-sensitivity-build/source.zip'
+          if (-not (Test-Path $zip)) { throw 'source.zip missing' }
+          Get-Item $zip | Format-List Name,Length,FullName
           if (Test-Path buildsrc) { Remove-Item buildsrc -Recurse -Force }
-          Expand-Archive -Path 'delta-sensitivity-build/source.zip' -DestinationPath 'buildsrc' -Force
-          Get-ChildItem buildsrc
+          New-Item -ItemType Directory -Path buildsrc | Out-Null
+          & tar.exe -xf $zip -C buildsrc
+          if ($LASTEXITCODE -ne 0) { throw "tar extraction failed: $LASTEXITCODE" }
+          if (-not (Test-Path 'buildsrc/DeltaSensitivityTester.csproj')) { throw 'project file missing after extraction' }
+          Get-ChildItem buildsrc | Select-Object Name,Length
 
       - name: Restore
         shell: pwsh
