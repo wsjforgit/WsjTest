@@ -1,0 +1,69 @@
+name: Build Delta Sensitivity Tester Windows EXE
+
+on:
+  push:
+    branches:
+      - delta-sensitivity-exe
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-win-x64:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Expand source
+        shell: pwsh
+        run: |
+          if (Test-Path buildsrc) { Remove-Item buildsrc -Recurse -Force }
+          Expand-Archive -Path 'delta-sensitivity-build/source.zip' -DestinationPath 'buildsrc' -Force
+          Get-ChildItem buildsrc
+
+      - name: Restore
+        shell: pwsh
+        run: dotnet restore 'buildsrc/DeltaSensitivityTester.csproj'
+
+      - name: Publish single-file Windows x64
+        shell: pwsh
+        run: |
+          dotnet publish 'buildsrc/DeltaSensitivityTester.csproj' `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            -o 'buildsrc/publish'
+          if (-not (Test-Path 'buildsrc/publish/DeltaSensitivityTester.exe')) {
+            throw 'DeltaSensitivityTester.exe was not generated.'
+          }
+          Get-Item 'buildsrc/publish/DeltaSensitivityTester.exe' | Format-List Name,Length,FullName
+
+      - name: Upload portable EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeltaSensitivityTester-win-x64-exe
+          path: buildsrc/publish/DeltaSensitivityTester.exe
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload full publish folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeltaSensitivityTester-win-x64-full
+          path: buildsrc/publish/**
+          if-no-files-found: error
+          retention-days: 14
