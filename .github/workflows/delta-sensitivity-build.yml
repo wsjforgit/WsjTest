@@ -23,16 +23,19 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Inspect and extract source
+      - name: Rebuild and extract source
         shell: pwsh
         run: |
-          $zip = 'delta-sensitivity-build/source.zip'
-          if (-not (Test-Path $zip)) { throw 'source.zip missing' }
-          Get-Item $zip | Format-List Name,Length,FullName
+          $parts = Get-ChildItem 'delta-sensitivity-build/source.b64.*' | Sort-Object Name
+          if (-not $parts -or $parts.Count -lt 7) { throw "source chunks missing: found $($parts.Count)" }
+          $b64 = ($parts | ForEach-Object { (Get-Content $_.FullName -Raw).Trim() }) -join ''
+          $bytes = [Convert]::FromBase64String($b64)
+          [IO.File]::WriteAllBytes('source-rebuilt.zip', $bytes)
+          $zip = Get-Item 'source-rebuilt.zip'
+          $zip | Format-List Name,Length,FullName
+          if ($zip.Length -lt 30000) { throw "rebuilt source zip too small: $($zip.Length) bytes" }
           if (Test-Path buildsrc) { Remove-Item buildsrc -Recurse -Force }
-          New-Item -ItemType Directory -Path buildsrc | Out-Null
-          & tar.exe -xf $zip -C buildsrc
-          if ($LASTEXITCODE -ne 0) { throw "tar extraction failed: $LASTEXITCODE" }
+          Expand-Archive -Path 'source-rebuilt.zip' -DestinationPath 'buildsrc' -Force
           if (-not (Test-Path 'buildsrc/DeltaSensitivityTester.csproj')) { throw 'project file missing after extraction' }
           Get-ChildItem buildsrc | Select-Object Name,Length
 
@@ -50,6 +53,7 @@ jobs:
             -p:PublishSingleFile=true `
             -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:EnableCompressionInSingleFile=true `
+            -p:PublishReadyToRun=false `
             -p:DebugType=None `
             -p:DebugSymbols=false `
             -o 'buildsrc/publish'
